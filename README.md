@@ -23,13 +23,6 @@
 网页版不需要安装：点「先看演示数据」可直接看界面与图表（虚构样本），或选择本机会话文件夹在浏览器内解析。
 额度与积分为桌面版独有（依赖本地服务）。
 
-## 在线体验
-
-<https://token-usage-dashboard-40677.app.workbuddy.host/?sharecode=FFQLQXDRTL>
-
-网页版不需要安装：点「先看演示数据」可直接看界面与图表（虚构样本），或选择本机会话文件夹在浏览器内解析。
-额度与积分为桌面版独有（依赖本地服务）。
-
 ## 快速开始
 
 要求：macOS，已安装 `python3`（系统自带或用 `brew install python3`）。**无第三方依赖**，只用 Python 标准库。
@@ -113,3 +106,14 @@ Codex 的额度窗口来自本机日志的最后一次调用，几天没用 Code
 MIT，见 [LICENSE](LICENSE)。
 
 本项目与 WorkBuddy、Codex、Claude Code、DeepSeek、Cursor、GitHub Copilot、智谱、Kimi 等产品的提供方**没有从属或背书关系**，相关名称仅用于说明兼容性。
+
+## 开发
+
+回归测试用合成夹具驱动真实解析函数，不依赖本机数据，任何机器可跑：
+
+```bash
+python3 test_sources.py
+```
+
+覆盖 Codex / Claude Code / DeepSeek Harness 三源直读与四源合并共 29 项断言。
+
