@@ -4,6 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Token 用量统计</title>
+<script>
+  // 线上部署时静态资源必须带 sharecode 才不会被 403，
+  // 而页面里的 <script src="app.js"> 是相对路径，浏览器请求时不会自动带上查询串。
+  // 这里把当前 URL 的查询串固化到 <base>，让所有相对路径资源都自动带上它。
+  // 桌面版（file:// 或本地服务，无 sharecode）不受影响——此时不注入 base。
+  (function () {
+    try {
+      var q = window.location.search || '';
+      if (!q) return;
+      var u = new URL(window.location.href);
+      // 只在 http(s) 下注入；file:// 协议加 base 反而会破坏相对路径
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+      var b = document.createElement('base');
+      b.setAttribute('href', u.pathname + q);
+      document.head.appendChild(b);
+    } catch (e) { /* 忽略：注入失败时退化为原行为 */ }
+  })();
+</script>
 <style>
   :root{
     color-scheme:light;
