@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# 运行时产物（本机数据，不应提交）
+token-usage-reports/
+*.log
+
+# 开发用：含个人用量基准，不随仓库分发
+web/golden-dev.js
