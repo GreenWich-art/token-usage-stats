@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token 用量统计</title>
+<style>
+  :root{
+    color-scheme:light;
+    --ink:#111827; --sub:#6b7280; --faint:#9ca3af; --line:#e5e7eb; --line2:#f2f3f5;
+    --bg:#f7f8fa; --card:#fff; --blue:#3b82f6; --green:#10b981; --amber:#f59e0b;
+    --red:#ef4444; --indigo:#6366f1;
+    /* 交互与辅色 */
+    --hover:#fafbfc; --grid:#eef0f3; --line-strong:#c7cbd3; --blue-hover:#2f74e0;
+    --accent-soft:#eef2ff; --accent-soft-2:#dde5ff; --accent-line:#c7d2fe;
+    --accent-ink:#4338ca; --accent-ink-2:#3730a3; --drop-hover:#f5f9ff;
+    --bar-blue:#93b4f7; --bar-zero:#e5eaf3; --code-bg:#f3f4f6;
+    --bar:rgba(255,255,255,.96);
+    --shadow:0 4px 14px rgba(17,24,39,.09); --shadow-sm:0 2px 8px rgba(17,24,39,.05);
+    --hm-empty:#f3f4f6; --btn:#fff;
+    /* 热力图行高：字号放大后同步加高，纵向显示整数行 */
+    --hm-row:34px; --hm-head:30px;
+    /* 日期滚轮 */
+    --dp-row:33px;
+  }
+
+  /* 跟随系统的暗色主题：与 macOS 深色（石墨灰底 + 柔和蓝）接近，不用纯黑避免刺眼 */
+  @media (prefers-color-scheme: dark){
+    :root{
+      color-scheme:dark;
+      --ink:#e8e9ec; --sub:#9b9fa8; --faint:#82878f;
+      --line:#2e2f35; --line2:#26272c;
+      --bg:#141518; --card:#1c1d21;
+      --blue:#5b9bff; --green:#3ddc97; --amber:#f5b544; --red:#f87171; --indigo:#8b8bf7;
+      --hover:#23242a; --grid:#282930; --line-strong:#3e3f47; --blue-hover:#74aaff;
+      --accent-soft:#1d2740; --accent-soft-2:#24314f; --accent-line:#33456f;
+      --accent-ink:#a9baff; --accent-ink-2:#c6d2ff; --drop-hover:#1a2436;
+      --bar-blue:#4d76c4; --bar-zero:#2a2b31; --code-bg:#232429;
+      --bar:rgba(28,29,33,.92);
+      --shadow:0 6px 18px rgba(0,0,0,.5); --shadow-sm:0 2px 8px rgba(0,0,0,.4);
+      --hm-empty:#26272c; --btn:#24252a;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    padding:26px 20px 70px;
+  }
+  .wrap{max-width:1120px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:-.2px}
+  .lead{color:var(--sub);font-size:12.5px;margin:0 0 20px;line-height:1.75}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;
+       background:var(--accent-soft);color:var(--accent-ink);vertical-align:2px;margin-left:6px;font-weight:500}
+
+  /* 数据源状态条 */
+  .srcbar{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);
+          border-radius:10px;padding:9px 14px;margin-bottom:14px;font-size:12.5px;color:var(--sub)}
+  .srcbar .sp{flex:1 1 auto}
+  .sdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+  .sdot.live{background:var(--green);box-shadow:0 0 0 3px rgba(16,185,129,.15)}
+  .sdot.file{background:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.15)}
+  .sdot.err{background:var(--red)}
+
+  /* 投放区 */
+  .drop{border:2px dashed var(--line);border-radius:12px;background:var(--card);
+        padding:26px 20px;text-align:center;transition:.15s;cursor:pointer}
+  .drop:hover,.drop.over{border-color:var(--blue);background:var(--drop-hover)}
+  .drop h2{font-size:15px;margin:0 0 6px;font-weight:600}
+  .drop p{margin:0;color:var(--sub);font-size:12.5px}
+  .btns{margin-top:13px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .opt{display:block;margin-top:12px;font-size:12.5px;color:var(--sub);cursor:pointer}
+  .opt input{vertical-align:-1px;margin-right:5px}
+  button{font:inherit;font-size:13px;padding:7px 15px;border-radius:8px;cursor:pointer;
+         border:1px solid var(--line);background:var(--btn);color:var(--ink)}
+  button:hover{border-color:var(--line-strong)}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  button.primary:hover{background:var(--blue-hover)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.sm{padding:4px 10px;font-size:12px;border-radius:6px}
+  button.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink);font-weight:500}
+  input[type=file]{display:none}
+
+  /* 进度 */
+  .progress{margin-top:14px;display:none}
+  .progress.on{display:block}
+  .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;background:var(--blue);transition:width .12s}
+  .pstat{font-size:12px;color:var(--sub);margin-top:6px}
+
+  /* 卡片 */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:11px;margin:20px 0}
+  /* 概览里两类各占一行：Token/模型 7 张，成本 3 张 */
+  .cards.kpi, .cards.cost{margin:0}
+  .cards.kpi{grid-template-columns:repeat(7,1fr)}
+  .cards.cost{grid-template-columns:repeat(3,1fr)}
+  @media (max-width:1040px){ .cards.kpi{grid-template-columns:repeat(4,1fr)} }
+  @media (max-width:700px){ .cards.kpi, .cards.cost{grid-template-columns:repeat(2,1fr)} }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card .k{font-size:12px;color:var(--sub)}
+  .card .v{font-size:21px;font-weight:650;margin:2px 0;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .v.sm{font-size:16px}
+  .card .s{font-size:11.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;
+          padding:15px 17px;margin-bottom:14px}
+  h2.sec{font-size:14px;margin:0 0 12px;font-weight:600}
+  h2.sec .note{font-size:11.5px;color:var(--sub);font-weight:400;margin-left:8px}
+
+  /* 筛选栏 */
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0 0;margin:0}
+  .filters .lbl{font-size:12.5px;color:var(--sub);margin-right:2px}
+  .filters .sp{flex:1 1 auto}
+
+  /* 日期字段：系统观感的胶囊按钮（点开是滚轮，见 .dp） */
+  .dfield{font:inherit;font-size:12.5px;padding:4px 10px;border:1px solid var(--line);
+          border-radius:7px;background:var(--btn);color:var(--ink);min-width:106px;
+          text-align:center;font-variant-numeric:tabular-nums;letter-spacing:.2px;
+          transition:border-color .12s,box-shadow .12s}
+  .dfield:hover{border-color:var(--line-strong)}
+  .dfield.open{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+  .dfield .dval{pointer-events:none}
+
+  /* 日期滚轮弹层：仿 macOS / iOS 系统选择器（三列滚轮 + 选中带 + 上下淡出）。
+     系统在桌面端不提供滚轮式日期控件（<input type=date> 只给日历网格），
+     所以这里按系统外观自绘，交互与手感对齐系统。 */
+  .dp{position:fixed;z-index:80;display:none;width:270px;padding:8px 0 6px;
+      background:var(--card);border:1px solid var(--line);border-radius:12px;
+      box-shadow:0 14px 36px rgba(17,24,39,.18),0 2px 8px rgba(17,24,39,.07);
+      -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+      user-select:none;-webkit-user-select:none;overflow:hidden}
+  .dp.on{display:block}
+  .dp-h{display:flex;padding:0 10px 3px;font-size:11px;color:var(--faint);letter-spacing:.6px}
+  .dp-h span{flex:1 1 0;text-align:center}
+  .dp-box{position:relative;display:flex;padding:0 8px}
+  .dp-band{position:absolute;left:8px;right:8px;top:calc(var(--dp-row) * 2);height:var(--dp-row);
+           border-radius:8px;background:var(--accent-soft);border:1px solid var(--accent-line);
+           pointer-events:none}
+  .dp-col{position:relative;z-index:1;flex:1 1 0;height:calc(var(--dp-row) * 5);
+          overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;
+          scrollbar-width:none;padding:calc(var(--dp-row) * 2) 0;outline:none}
+  .dp-col[data-f="y"]{flex:1.25 1 0}
+  .dp-col::-webkit-scrollbar{display:none}
+  .dp-col > div{height:var(--dp-row);line-height:var(--dp-row);text-align:center;
+          font-size:14px;color:var(--faint);scroll-snap-align:center;
+          font-variant-numeric:tabular-nums;transition:color .12s,font-size .12s}
+  .dp-col > div.sel{color:var(--ink);font-size:15.5px;font-weight:600}
+  .dp-mask{position:absolute;left:0;right:0;height:calc(var(--dp-row) * 1.7);
+           pointer-events:none;z-index:2}
+  .dp-mask.t{top:0;background:linear-gradient(to bottom,var(--card) 30%,transparent)}
+  .dp-mask.b{bottom:0;background:linear-gradient(to top,var(--card) 30%,transparent)}
+
+  /* 表格 */
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;table-layout:fixed}
+  th{text-align:center;font-weight:600;color:var(--sub);border-bottom:1.5px solid var(--line);
+     padding:7px 8px;white-space:nowrap;background:var(--card)}
+  td{text-align:left;border-bottom:1px solid var(--line2);padding:7px 8px;
+     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  tbody tr:hover td{background:var(--hover)}
+  .scroll{max-height:380px;overflow:auto}
+
+  /* 表头与表体分离：表头不进滚动容器。
+     Safari/WebKit 下「吸顶表头 + max-height 滚动容器」会把表头位置算错，
+     首行数据被顶到表头上方（看起来像文字溢出），此结构从根上避开 sticky。 */
+  .tbl-h{overflow:hidden;background:var(--card)}
+  .tbl-h table{width:100%}
+  .tbl-h th{border-bottom:1.5px solid var(--line)}
+  .tbl-b{overflow-y:auto;overflow-x:hidden}
+  /* 行级吸附：滚动停稳后对齐到整行，避免出现半行 */
+  .tbl-b, .scroll{scroll-snap-type:y proximity}
+  .tbl-b tbody tr, .scroll tbody tr{scroll-snap-align:start}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--sub)}
+  .sessname{white-space:normal;line-height:1.35;padding-top:6px;padding-bottom:6px}
+  .sessname .nm{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sessname .uid{display:block;color:var(--sub);font-size:11px;font-family:ui-monospace,monospace}
+
+  /* 图表 */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-bottom:10px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:0}
+  .chartrow{display:flex;align-items:flex-start}
+  .yaxis{flex:0 0 auto;display:block}
+  .chartwrap3{position:relative;flex:1 1 auto;min-width:0}
+  .scrollx{overflow-x:auto;overflow-y:hidden}
+  .chartwide{display:block;max-width:none;height:300px}
+  .chartview{position:relative}
+  .grid{stroke:var(--grid);stroke-width:1}
+  .dotpt{fill:var(--ink)}
+  .guideline{stroke:var(--faint)}
+  .hovdot{fill:var(--ink);stroke:var(--card)}
+  .axis{font-size:10.5px;fill:var(--sub)}
+  .tip{position:absolute;top:2px;pointer-events:none;opacity:0;transition:opacity .1s;
+       background:var(--card);border:1px solid var(--line);border-radius:8px;
+       box-shadow:var(--shadow);padding:9px 12px;font-size:12px;white-space:nowrap;z-index:5}
+  .tip-d{font-weight:600;margin-bottom:5px}
+  .tip-r{display:flex;align-items:center;gap:6px;color:var(--sub);line-height:1.7}
+  .tip-r i{display:inline-block;width:8px;height:8px;border-radius:50%}
+  .tip-r b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* 热力图：表头 / 表体拆成两张表（表头不进纵向滚动容器），
+     横向滚动由表体驱动、表头逐帧跟随；左「模型」列与右「合计」列在各自容器内 sticky。
+     不用「sticky thead + 限高滚动容器」——那套在 WebKit 会把表头位置算错。 */
+  .hmbox{position:relative}
+  /* 表头容器也用 overflow:auto（而不是 hidden）：sticky 在滚动容器里才稳，
+     滚动条本身藏掉，横向由脚本双向同步 */
+  .hm-h{overflow-x:auto;overflow-y:hidden;background:var(--card);scrollbar-width:none;
+        overscroll-behavior-x:contain}
+  .hm-h::-webkit-scrollbar{display:none;height:0}
+  .hm-b{overflow:auto;overscroll-behavior-x:contain;scroll-snap-type:y proximity}
+  .hm-b tbody tr{scroll-snap-align:start}
+  table.hm{table-layout:fixed;width:auto;min-width:0;background:var(--card)}
+  .hm th, .hm td{padding:0;border-bottom:1px solid var(--line2)}
+  .hm thead th{height:var(--hm-head);font-size:11.5px;font-weight:600;color:var(--sub);
+       background:var(--card)}
+  .hm tbody th, .hm tbody td{height:var(--hm-row)}
+  .hm .cell{padding:0 4px}
+  /* 模型名：字号放大到 13.5px，列宽同步加宽，长名仍单行省略 */
+  .hm .hmlabel{text-align:left;padding:0 10px;font-size:13.5px;font-weight:400;color:var(--ink);
+       position:sticky;left:0;background:var(--card);z-index:1;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+       will-change:transform}
+  .hm thead .hmlabel{text-align:center;font-size:12px;font-weight:600;color:var(--sub);z-index:3}
+  .hm .hmtotal{text-align:left;padding-left:10px;font-size:12.5px;color:var(--sub);
+       position:sticky;right:0;background:var(--card);z-index:1;box-shadow:-2px 0 0 var(--line);
+       font-variant-numeric:tabular-nums;will-change:transform}
+  .hm thead .hmtotal{text-align:center;padding:0;font-size:11.5px;font-weight:600;z-index:3}
+
+  /* 来源徽标：颜色由各自的 --bg/--fg 驱动，暗色下自动换一套低饱和配色 */
+  .badge{display:inline-block;font-size:10.5px;line-height:1.5;padding:0 5px;border-radius:4px;
+         margin-left:5px;vertical-align:1px;white-space:nowrap;background:var(--bg);color:var(--fg)}
+  .b-workbuddy{--bg:#eef2ff;--fg:#4338ca}
+  .b-byok{--bg:#fff7ed;--fg:#c2410c}
+  .b-codex{--bg:#ecfdf5;--fg:#047857}
+  .b-cursor{--bg:#f5f3ff;--fg:#6d28d9}
+  .b-dsh{--bg:#eff6ff;--fg:#1d4ed8}
+  .b-other{--bg:#f3f4f6;--fg:#4b5563}
+  .b-retired{--bg:#f3f4f6;--fg:#6b7280}
+  @media (prefers-color-scheme: dark){
+    .b-workbuddy{--bg:#1e2740;--fg:#a9baff}
+    .b-byok{--bg:#2e2116;--fg:#ffb877}
+    .b-codex{--bg:#12261f;--fg:#5fe0b0}
+    .b-cursor{--bg:#231f38;--fg:#c3b2ff}
+    .b-dsh{--bg:#152438;--fg:#8ab8ff}
+    .b-other{--bg:#212731;--fg:#a7b0bd}
+    .b-retired{--bg:#212731;--fg:#8c95a3}
+  }
+
+  /* 图表系列色（趋势图面积 / 折线 / 提示点 / 占比条） */
+  .ser-in{fill:var(--blue)} .ser-out{fill:var(--amber)} .ser-cache{fill:var(--green)}
+  .ln-in{stroke:var(--blue)} .ln-out{stroke:var(--amber)} .ln-cache{stroke:var(--green)}
+  .dot-total{background:var(--ink)} .dot-in{background:var(--blue)}
+  .dot-out{background:var(--amber)} .dot-cache{background:var(--green)} .dot-cnt{background:var(--faint)}
+  .meter{background:var(--accent-soft)}
+  .meter > i{background:var(--blue)}
+  .src-link{color:var(--blue);text-decoration:none}
+  /* 额度与积分 */
+  .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:11px;
+         grid-auto-rows:1fr}
+  .qcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+         min-width:0}
+  /* 标题/副标题/窗口名一律单行省略：窗口标识有时是长串（pool:<哈希>:…），
+     不让它把 grid 卡片撑破（用户实测到的文字溢出） */
+  .qcard .qt{font-size:13px;font-weight:600;margin-bottom:2px;
+             display:flex;align-items:center;gap:6px;min-width:0}
+  .qcard .qt .qt-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qcard .qs{font-size:11px;color:var(--sub);margin-bottom:9px;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qrow{margin-top:8px}
+  .qrow .ql{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--sub);
+            margin-bottom:3px;min-width:0}
+  .qrow .ql > span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qrow .ql b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600;flex:0 0 auto}
+  .qbar{height:7px;border-radius:4px;background:var(--grid);overflow:hidden}
+  .qbar > i{display:block;height:100%;border-radius:4px}
+  .qbar.ok > i{background:var(--green)} .qbar.mid > i{background:var(--amber)}
+  .qbar.low > i{background:var(--red)}
+  .qmeta{font-size:10.5px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
+  /* 数值卡片：大数字 + 旁边的小号浅色说明（与概览 KPI 的观感一致） */
+  .qstat{display:flex;align-items:baseline;gap:9px;margin-top:11px;min-width:0}
+  .qstat b{font-size:21px;font-weight:650;letter-spacing:-.3px;line-height:1.15;
+           font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .qstat span{font-size:11.5px;color:var(--sub);white-space:nowrap;
+              overflow:hidden;text-overflow:ellipsis}
+  .csum{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:8px}
+  .csum .n{font-size:19px;font-weight:650;letter-spacing:-.3px}
+  .csum .u{font-size:11.5px;color:var(--sub)}
+  .ctab{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed}
+  .ctab th{text-align:left;font-weight:600;color:var(--sub);font-size:11px;
+           padding:4px 8px;border-bottom:1px solid var(--line)}
+  /* 表头与所在列的内容对齐方式一致：文本列左、数字列右 */
+  .ctab th.num{text-align:right}
+  .ctab td{padding:5px 8px;border-bottom:1px solid var(--line2);text-align:left;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ctab td.num{text-align:right;font-variant-numeric:tabular-nums}
+  /* 占比列：小进度条 + 数字同一格，条不伸缩 */
+  .ctab td.pctcell{white-space:nowrap}
+  .ctab .qbar{display:inline-block;width:46px;height:7px;margin-right:7px;vertical-align:1px}
+  .ctab td.pctcell b{font-size:11px;font-weight:600;color:var(--ink)}
+  .qnote{font-size:11.5px;color:var(--sub);margin-top:9px;line-height:1.7}
+  .qsub{font-size:11.5px;font-weight:600;color:var(--sub);margin:14px 0 7px}
+  /* 额度区顶部：联网刷新开关 */
+  .qhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
+  .qhead .qk{font-size:12px;font-weight:600;color:var(--ink)}
+  .qhead .qm{font-size:11px;color:var(--sub);min-width:0}
+  .hm .cell i{display:block;width:100%;height:calc(var(--hm-row) - 8px);border-radius:4px}
+  .hmname{display:inline-block;max-width:178px;overflow:hidden;text-overflow:ellipsis;
+          white-space:nowrap;vertical-align:bottom}
+  .hm .badge{font-size:11px;margin-left:6px;vertical-align:1px}
+
+  /* 半小时分布：绘图区与坐标轴分离，柱子一律贴同一条基线 */
+  .hours{display:flex;gap:2px;align-items:flex-end;height:132px;
+         border-bottom:1px solid var(--line);padding-bottom:0}
+  .hours .hb{flex:1 1 0;height:100%;display:flex;align-items:flex-end;justify-content:center}
+  .hours .hb i{display:block;width:100%;background:var(--bar-blue);border-radius:2px 2px 0 0;
+               transition:background .15s}
+  .hours .hb.zero i{background:var(--bar-zero)}
+  .hours .hb:hover i{background:var(--blue)}
+  .hours-axis{display:flex;gap:2px;margin-top:5px}
+  .hours-axis span{flex:1 1 0;text-align:center;font-size:9.5px;color:var(--faint);
+                   font-variant-numeric:tabular-nums;white-space:nowrap}
+  .hourswrap{position:relative}
+
+  /* 成本 */
+  .pricegrid{display:grid;grid-template-columns:1fr 100px 100px 100px;gap:6px 10px;
+             align-items:center;font-size:12.5px}
+  .pricegrid .hd{font-size:11.5px;color:var(--sub);text-align:right;padding-bottom:2px}
+  .pricegrid .hd:first-child{text-align:left}
+  .pricegrid .mn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  price-grid input{font:inherit}
+  .pricegrid input{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);
+                   border-radius:5px;text-align:right;width:100%;background:var(--btn);color:var(--ink)}
+  .pricegrid input:focus{outline:none;border-color:var(--blue)}
+
+  /* 自检 */
+  .check .row{display:flex;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line2)}
+  .check .row:last-child{border-bottom:0}
+  .check .row > span:first-child{flex:0 0 auto;color:var(--sub)}
+  .ok{color:var(--green);font-weight:600}
+  .ng{color:var(--red);font-weight:600}
+  .warn{color:var(--amber);font-weight:600}
+  .empty{color:var(--sub);font-size:13px;text-align:center;padding:24px 0}
+  .hide{display:none}
+
+  /* 吸顶条：导航 + 时间范围一起吸顶 */
+  .stickybar{position:sticky;top:0;z-index:30;
+             background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(8px);
+             backdrop-filter:saturate(180%) blur(8px);border:1px solid var(--line);border-radius:10px;
+             padding:8px 11px 7px;margin:0 0 12px;box-shadow:var(--shadow-sm)}
+  .catnav{display:flex;gap:6px;flex-wrap:wrap;align-items:center;
+          padding:0 0 7px;border-bottom:1px solid var(--line2)}
+  .catnav .cat{font:inherit;font-size:12.5px;padding:6px 13px;border:1px solid transparent;
+               border-radius:8px;background:transparent;color:var(--sub);cursor:pointer;transition:.12s}
+  .catnav .cat:hover{background:var(--hover);color:var(--ink)}
+  .catnav .cat.on{background:var(--accent-soft);border-color:var(--accent-soft-2);color:var(--accent-ink-2);font-weight:600}
+  .catnav .hint{margin-left:auto;font-size:11.5px;color:var(--faint)}
+  /* 排障用的折叠区：默认收起，标题就是一句人话 */
+  .adv{border:1px solid var(--line);border-radius:9px;background:var(--card);padding:0 13px}
+  .adv > summary{cursor:pointer;padding:10px 0;font-size:12.5px;font-weight:600;
+                 list-style:none;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .adv > summary::-webkit-details-marker{display:none}
+  .adv > summary::before{content:'▸';color:var(--sub);font-size:10px}
+  .adv[open] > summary::before{content:'▾'}
+  .adv > summary .note{font-weight:400}
+
+  footer{color:var(--sub);font-size:11.5px;margin-top:24px;line-height:1.8}
+  code{background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Token 用量统计 <span class="tag">本地解析 · 不上传</span></h1>
+  <p class="lead">
+    自动汇总本机 WorkBuddy、Codex、Claude Code、DeepSeek 的用量记录，
+    全部在本机解析，不上传任何内容。<br>
+    桌面版自动读取最新数据；网页版选择一次会话文件夹即可，结果同样只留在你的电脑上。
+  </p>
+
+  <!-- ===== 数据源状态 ===== -->
+  <div class="srcbar" id="srcbar">
+    <span class="sdot" id="srcDot"></span>
+    <span id="srcText">正在读取本机数据…</span>
+    <span class="sp"></span>
+    <label class="opt" style="margin:0" title="子代理是主会话派生出的并行任务，默认不计入主会话统计">
+      <input type="checkbox" id="includeSub"> 含子代理会话</label>
+    <button class="sm" id="refreshBtn">刷新数据</button>
+  </div>
+
+  <!-- ===== 文件模式（本地服务不可用时显示）===== -->
+  <div id="fileMode">
+    <div id="webDemoTip" class="hide" style="background:var(--card);border:1px solid var(--line);
+         border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:12.5px;
+         line-height:1.85;color:var(--sub)">
+      <b style="color:var(--ink)">这是网页版：数据只在你的浏览器里解析。</b><br>
+      1. 点下面「选择文件夹」，选中本机的会话目录（推荐整个 <code>projects</code> 文件夹）<br>
+      2. macOS 的 <code>~/.workbuddy</code> 是隐藏目录，在选择窗口里按 <b>⌘ + ⇧ + .</b> 即可显示<br>
+      3. 选完立即出结果：文件不会被上传，也不会离开这台电脑<br>
+      <span style="color:var(--faint)">额度与积分需要本地服务，网页版不提供；桌面版可看全部指标。</span>
+      <div style="margin-top:10px">
+        <button class="primary" id="demoBtn">先看演示数据</button>
+        <span style="color:var(--faint);margin-left:8px">虚构样本，用来看界面长什么样</span>
+      </div>
+    </div>
+    <div class="drop" id="drop">
+      <h2>把会话文件夹拖到这里</h2>
+      <p>或点击选择 · 建议选择 WorkBuddy 的 projects 文件夹<br>
+         可多次选择，结果会累加</p>
+      <div class="btns">
+        <button class="primary" id="pickFolder">选择文件夹</button>
+        <button id="pickFiles">选择文件</button>
+        <button id="clearBtn" disabled>清空数据</button>
+      </div>
+    </div>
+    <input type="file" id="fileMulti" multiple accept=".jsonl">
+    <input type="file" id="fileDir" webkitdirectory directory multiple>
+  </div>
+
+  <div class="progress" id="progress">
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="pstat" id="pstat">准备中…</div>
+  </div>
+
+  <div id="result" class="hide">
+
+    <!-- 吸顶条：导航在上，时间范围在下；时间范围为各分类独立记忆 -->
+    <div class="stickybar" id="stickybar">
+      <nav class="catnav" id="catnav">
+        <button class="cat on" data-cat="overview">概览</button>
+        <button class="cat" data-cat="trend">趋势与分布</button>
+        <button class="cat" data-cat="models">模型与成本</button>
+        <button class="cat" data-cat="sessions">会话</button>
+        <button class="cat" data-cat="detail">明细与诊断</button>
+        <span class="hint">点分类只看该部分；时间范围按分类分别记住</span>
+      </nav>
+
+      <div class="filters" id="filters">
+        <span class="lbl">时间范围</span>
+        <button class="sm" data-range="all">全部</button>
+        <button class="sm" data-range="7">近 7 天</button>
+        <button class="sm" data-range="30">近 30 天</button>
+        <button class="sm" data-range="month">本月</button>
+        <span class="lbl" style="margin-left:6px">自定义</span>
+        <button type="button" class="dfield" id="dateFrom" aria-haspopup="dialog" title="点击选择开始日期"><span class="dval">年/月/日</span></button>
+        <span class="muted">~</span>
+        <button type="button" class="dfield" id="dateTo" aria-haspopup="dialog" title="点击选择结束日期"><span class="dval">年/月/日</span></button>
+        <span class="sp"></span>
+        <span class="muted" id="rangeInfo" style="font-size:12px"></span>
+      </div>
+    </div>
+
+    <div data-cat="overview">
+      <section style="margin-top:0">
+        <h2 class="sec">Token 用量与模型<span class="note">当前时间范围内</span></h2>
+        <div class="cards kpi" id="cards"></div>
+      </section>
+
+      <section>
+        <h2 class="sec">成本估算<span class="note">按官方 API 单价折算，可横向比较不同模型与渠道的消耗规模；明细见「模型与成本」</span></h2>
+        <div class="cards cost" id="costCards"></div>
+      </section>
+
+      <!-- 额度与积分：本地可得的计划额度 + WorkBuddy 积分 -->
+      <section id="quotaSec">
+        <h2 class="sec">额度与积分<span class="note">额度为本地记录的最新值；积分按逐次调用汇总</span></h2>
+        <div id="quotaBox"></div>
+      </section>
+    </div>
+
+    <!-- 趋势 -->
+    <section data-cat="trend">
+      <h2 class="sec">每日消耗趋势<span class="note">按日堆叠：输入 / 输出 / 缓存读取；悬停任意日期查看当日构成；可横向滑动</span></h2>
+      <div class="legend">
+        <span><i class="dot-in"></i>输入</span>
+        <span><i class="dot-out"></i>输出</span>
+        <span><i class="dot-cache"></i>缓存读取</span>
+        <span><i class="dot-total"></i>当日总量（悬停查看）</span>
+      </div>
+      <div class="chartrow">
+        <div id="yaxisBox" class="yaxis"></div>
+        <div class="chartwrap3">
+          <div class="scrollx" id="scrollx"><div id="chartview"></div></div>
+          <div class="tip" id="tip"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 热力图 -->
+    <section data-cat="trend">
+      <h2 class="sec">模型 × 每日消耗<span class="note">用量最高的 24 个模型，颜色越深用量越大；悬停查看精确值；可上下滑动</span></h2>
+      <div id="heatmapBox"></div>
+    </section>
+
+    <!-- 今日使用情况 -->
+    <section data-cat="trend">
+      <h2 class="sec">今日使用情况<span class="note">今天 0 点至现在，每根柱 = 30 分钟（本地时区）；悬停查看该时段明细</span></h2>
+      <div class="hourswrap" id="hoursWrap">
+        <div class="hours" id="hoursBox"></div>
+        <div class="hours-axis" id="hoursAxis"></div>
+        <div class="tip" id="htip"></div>
+      </div>
+    </section>
+
+    <!-- 模型排行 + 成本 -->
+    <section data-cat="models">
+      <h2 class="sec">模型用量排行<span class="note">缓存命中率 = 缓存读取 /（输入 + 缓存读取）</span></h2>
+      <div class="tbl">
+        <div class="tbl-h"><table>
+          <colgroup><col style="width:4%"><col style="width:21%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:10%"><col style="width:9%"><col style="width:11%"><col style="width:10%"><col style="width:10%"></colgroup>
+          <thead><tr><th>#</th><th>模型</th><th>调用次数</th><th>输入</th><th>输出</th><th>缓存读取</th><th>缓存命中率</th><th>Token 总量</th><th>占比</th><th>成本</th></tr></thead>
+        </table></div>
+        <div class="tbl-b" style="max-height:380px"><table>
+          <colgroup><col style="width:4%"><col style="width:21%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:10%"><col style="width:9%"><col style="width:11%"><col style="width:10%"><col style="width:10%"></colgroup>
+          <tbody id="modelBody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 成本估算 -->
+    <section data-cat="models">
+      <h2 class="sec">成本明细<span class="note">按官方 API 单价逐次折算；合计见「概览」，是等价价值、非实际支出</span></h2>
+      <div id="costBox"></div>
+    </section>
+
+    <!-- 会话下钻 -->
+    <section data-cat="sessions">
+      <!-- 今日会话：只看当天，按会话拆分 -->
+      <h2 class="sec">今日会话<span class="note">今天 0 点至现在，按会话统计调用次数与 Token 消耗</span></h2>
+      <div class="tbl">
+        <div class="tbl-h"><table>
+          <colgroup><col style="width:40%"><col style="width:22%"><col style="width:13%"><col style="width:15%"><col style="width:10%"></colgroup>
+          <thead><tr><th>会话</th><th>主要模型</th><th>调用次数</th><th>Token</th><th>占比</th></tr></thead>
+        </table></div>
+        <div class="tbl-b" style="max-height:260px"><table>
+          <colgroup><col style="width:40%"><col style="width:22%"><col style="width:13%"><col style="width:15%"><col style="width:10%"></colgroup>
+          <tbody id="todayBody"></tbody>
+        </table></div>
+      </div>
+
+      <h2 class="sec" style="margin-top:22px">会话排行<span class="note">按 Token 总量降序；点会话看模型构成</span></h2>
+      <div class="tbl">
+        <div class="tbl-h"><table>
+          <colgroup><col style="width:29%"><col style="width:22%"><col style="width:19%"><col style="width:12%"><col style="width:18%"></colgroup>
+          <thead><tr><th>会话</th><th>起止日期</th><th>主要模型</th><th>调用次数</th><th>Token 总量</th></tr></thead>
+        </table></div>
+        <div class="tbl-b" style="max-height:320px"><table>
+          <colgroup><col style="width:29%"><col style="width:22%"><col style="width:19%"><col style="width:12%"><col style="width:18%"></colgroup>
+          <tbody id="sessBody"></tbody>
+        </table></div>
+      </div>
+      <div id="sessDetail" class="hide" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"></div>
+    </section>
+
+    <!-- 每日明细 -->
+    <section data-cat="detail">
+      <h2 class="sec">每日明细</h2>
+      <div class="tbl">
+        <div class="tbl-h"><table>
+          <colgroup><col style="width:16%"><col style="width:11%"><col style="width:14%"><col style="width:14%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup>
+          <thead><tr><th>日期</th><th>调用次数</th><th>输入</th><th>输出</th><th>缓存读取</th><th>Token 总量</th><th>占区间</th></tr></thead>
+        </table></div>
+        <div class="tbl-b" style="max-height:380px"><table>
+          <colgroup><col style="width:16%"><col style="width:11%"><col style="width:14%"><col style="width:14%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup>
+          <tbody id="dayBody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 覆盖诊断（默认折叠：排障用，不是日常信息） -->
+    <section data-cat="detail">
+      <details class="adv">
+        <summary>数据来源明细<span class="note">按项目目录列出实际读到的文件数与用量，用于核对是否有目录没被读到</span></summary>
+        <div class="tbl" style="margin-top:10px">
+          <div class="tbl-h"><table>
+            <colgroup><col style="width:58%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup>
+            <thead><tr><th>项目目录</th><th>文件数</th><th>调用次数</th><th>Token 总量</th></tr></thead>
+          </table></div>
+          <div class="tbl-b" style="max-height:260px"><table>
+            <colgroup><col style="width:58%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup>
+            <tbody id="covBody"></tbody>
+          </table></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- 自检（默认折叠：内部一致性检查，排障时展开） -->
+    <section data-cat="detail" id="checkSec">
+      <details class="adv">
+        <summary>数据校验<span class="note">展开可检查各维度合计是否一致；排查数字异常时用</span></summary>
+        <div class="check" id="checkOut" style="margin-top:10px"></div>
+      </details>
+    </section>
+  </div>
+
+  <footer>
+    数据全部在本机读取与解析，不上传任何内容。<br>
+    <b>输入</b>不含缓存命中部分（命中量单列为「缓存读取」）；<b>输出</b>已包含推理 token，不重复计。
+    默认不含子代理会话，可在右上角勾选。
+  </footer>
+</div>
+
+<script src="token-semantics.js"></script>
+<script src="prices.js"></script>
+<script src="cost.js"></script>
+<script src="demo-data.js" onerror="void 0"></script>
+<script src="app.js"></script>
+</body>
+</html>
